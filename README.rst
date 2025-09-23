@@ -1,4 +1,4 @@
-FullPageOS
+FullPageOS - test
 ==========
 
 .. image:: https://github.com/guysoft/FullPageOS/blob/secularstevelogo/media/FullPageOS.png?raw=true

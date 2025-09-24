@@ -31,10 +31,9 @@ fi
 remove_extra=$(remove_if_installed scratch squeak-plugins-scratch squeak-vm python-minecraftpi minecraft-pi sonic-pi oracle-java8-jdk bluej greenfoot libreoffice-common libreoffice-core freepats)
 
 apt-get remove -y --purge  $remove_extra
-
 apt-get autoremove -y
 
-#apt-get tools
+# apt-get tools
 apt-get -y --force-yes install git screen checkinstall avahi-daemon libavahi-compat-libdnssd1 xterm xdotool vim expect feh pulseaudio
 
 if [ "$FULLPAGEOS_INCLUDE_CHROMIUM" == "yes" ]
@@ -43,21 +42,19 @@ then
     sed -i 's@%BROWSER_START_SCRIPT%@/opt/custompios/scripts/start_chromium_browser@g' /opt/custompios/scripts/run_onepageos
 fi
 
-#Install web stack
+# Install web stack (optional lighttpd)
 if [ "$FULLPAGEOS_INCLUDE_LIGHTTPD" == "yes" ]
 then
     apt-get install -y lighttpd php-common php-cgi php
     lighty-enable-mod fastcgi-php
-    #service lighttpd force-reload
     chown -R www-data:www-data /var/www/html
     chmod 775 /var/www/html
     usermod -a -G www-data pi
     systemctl enable clear_lighttpd_cache.service
     pushd /var/www/html
-        #Put git clones in place
         if [ "$FULLPAGEOS_INCLUDE_DASHBOARD" == "yes" ]
         then
-        gitclone FULLPAGEOS_DASHBOARD_REPO FullPageDashboard
+            gitclone FULLPAGEOS_DASHBOARD_REPO FullPageDashboard
             chown -R pi:pi FullPageDashboard
             chown -R www-data:www-data FullPageDashboard
             chmod 775 FullPageDashboard
@@ -65,28 +62,25 @@ then
                 sed -i "s@'INIT_URL_PATH', __DIR__ . '/init.txt'@'INIT_URL_PATH', '/"${BASE_BOOT_MOUNT_PATH}"/fullpagedashboard.txt'@g" config.php
             popd
         fi
-        #Set Welcome screen
         if [ "$FULLPAGEOS_INCLUDE_WELCOME" == "yes" ]
-        then        
+        then
             gitclone FULLPAGEOS_WELCOME_REPO welcome
             chown -R www-data:www-data welcome
         fi
     popd
-    
     echo "enabled" > /"${BASE_BOOT_MOUNT_PATH}"/check_for_httpd
 else
     echo "disabled" > /"${BASE_BOOT_MOUNT_PATH}"/check_for_httpd
 fi
 
-
-#override timezone
+# override timezone
 if [ "$FULLPAGEOS_OVERRIDE_TIMEZONE" != "default" ]
 then
     ln -fs /usr/share/zoneinfo/"$FULLPAGEOS_OVERRIDE_TIMEZONE" /etc/localtime
     dpkg-reconfigure -f noninteractive tzdata
 fi
 
-#override locale
+# override locale
 if [ "$FULLPAGEOS_OVERRIDE_LOCALE" != "default" ]
 then
     sed -i '/^#.* '"$FULLPAGEOS_OVERRIDE_LOCALE"' /s/^# //' /etc/locale.gen
@@ -94,7 +88,7 @@ then
     update-locale LANG="$FULLPAGEOS_OVERRIDE_LOCALE"
 fi
 
-#override keyboard model and layout
+# override keyboard model and layout
 if [ "$FULLPAGEOS_OVERRIDE_KBD_MODEL" != "default" ]
 then
     sed -i 's/^XKBMODEL=.*/XKBMODEL="'$FULLPAGEOS_OVERRIDE_KBD_MODEL'"/' /etc/default/keyboard
@@ -109,68 +103,336 @@ then
 fi
 
 # Add emoji support
-sudo -u pi mkdir -p /home/pi/.fonts
-sudo -u pi wget --directory-prefix /home/pi/.fonts https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf
+sudo -u "${BASE_USER}" mkdir -p /home/"${BASE_USER}"/.fonts
+sudo -u "${BASE_USER}" wget --directory-prefix /home/"${BASE_USER}"/.fonts https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf
 
-#override password
+# override password
 if [ "$FULLPAGEOS_OVERRIDE_PASSWORD" != "default" ]
 then
-    #root password
-    echo "pi:$FULLPAGEOS_OVERRIDE_PASSWORD" | chpasswd
+    echo "${BASE_USER}:$FULLPAGEOS_OVERRIDE_PASSWORD" | chpasswd
 fi
 
-#Setup x11vnc
+# Setup x11vnc
 if [ "$FULLPAGEOS_INCLUDE_X11VNC"  == "yes" ]
 then
     apt-get install -y --force-yes x11vnc
-
     mkdir -p /opt/custompios/vnc
     chown "${BASE_USER}":"${BASE_USER}" /opt/custompios/vnc
-
-    # Set x11vnc password
     if [ "$FULLPAGEOS_OVERRIDE_PASSWORD" != "default" ]
     then
-        sudo -u pi /opt/custompios/scripts/setX11vncPass "$FULLPAGEOS_OVERRIDE_PASSWORD"
+        sudo -u "${BASE_USER}" /opt/custompios/scripts/setX11vncPass "$FULLPAGEOS_OVERRIDE_PASSWORD"
         sync
         if [ ! -f /opt/custompios/vnc/passwd ] || [ ! -s /opt/custompios/vnc/passwd ]; then
           echo "/opt/custompios/vnc/passwd was not created. Trying again."
-          sudo -u pi /opt/custompios/scripts/setX11vncPass "$FULLPAGEOS_OVERRIDE_PASSWORD"
+          sudo -u "${BASE_USER}" /opt/custompios/scripts/setX11vncPass "$FULLPAGEOS_OVERRIDE_PASSWORD"
           sync
           if [ ! -f /opt/custompios/vnc/passwd ] || [ ! -s /opt/custompios/vnc/passwd ]; then
-            echo "/opt/custompios/vnc/passwd was not created again. Giving up."
             echo "Failed to set a VNC password. Aborting build."
             exit 1
            fi
         fi
     else
-        sudo -u pi /opt/custompios/scripts/setX11vncPass raspberry
+        sudo -u "${BASE_USER}" /opt/custompios/scripts/setX11vncPass raspberry
         sync
         if [ ! -f /opt/custompios/vnc/passwd ] || [ ! -s /opt/custompios/vnc/passwd ]; then
           echo "/opt/custompios/vnc/passwd was not created. Trying again."
-          sudo -u pi /opt/custompios/scripts/setX11vncPass raspberry
+          sudo -u "${BASE_USER}" /opt/custompios/scripts/setX11vncPass raspberry
           sync
           if [ ! -f /opt/custompios/vnc/passwd ] || [ ! -s /opt/custompios/vnc/passwd ]; then
-            echo "/opt/custompios/vnc/passwd was not created again. Giving up."
             echo "Failed to set a VNC password. Aborting build."
             exit 1
           fi
         fi
     fi
     ls -l /opt/custompios/vnc/passwd
-
-    #Enable x11vnc service
     systemctl enable x11vnc.service
 fi
 
-#echo "sudo -u pi startx /opt/custompios/scripts/run_onepageos &" >> /etc/rc.local
-#echo "(sleep 15 ; sudo -u pi /opt/custompios/scripts/fullscreen) &" >> /etc/rc.local
+# Toolchains (from docs - Klipper deps)
+apt-get install -y \
+  python3-virtualenv python3-dev libffi-dev build-essential libncurses-dev \
+  avrdude gcc-avr binutils-avr avr-libc stm32flash dfu-util \
+  libnewlib-arm-none-eabi gcc-arm-none-eabi binutils-arm-none-eabi \
+  libusb-1.0-0 libusb-1.0-0-dev
 
-#####################################################################
-### setup services
+###############################################################################
+### Mainsail Manual Setup (Klipper + Moonraker + NGINX + Mainsail static) #####
+### Based on https://docs.mainsail.xyz/setup/getting-started/manual-setup
+###############################################################################
 
+# 0) Base packages required by the guide (git, unzip already present above)
+apt-get update
+apt-get install -y git unzip
+
+# Moonraker additional deps (Bookworm set)
+apt-get install -y \
+  libopenjp2-7 python3-libgpiod curl libcurl4-openssl-dev libssl-dev \
+  liblmdb-dev libsodium-dev zlib1g-dev libjpeg-dev packagekit wireless-tools
+
+# 1) Create the directory structure
+sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{config,logs,gcodes,systemd,comms} && touch ~/printer_data/config/printer.cfg'
+
+# 2) Clone Klipper and create its venv
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/klipper/.git" ]; then
+    git clone https://github.com/Klipper3d/klipper
+  else
+    cd klipper && git fetch --all -p && git reset --hard origin/master
+  fi
+  cd ~
+  if [ ! -d "$HOME/klippy-env" ]; then
+    virtualenv -p python3 ./klippy-env
+  fi
+  ./klippy-env/bin/pip install -r ./klipper/scripts/klippy-requirements.txt
+'
+
+# 3) Klipper systemd unit and env
+cat >/etc/systemd/system/klipper.service <<EOF
+[Unit]
+Description=Klipper 3D Printer Firmware SV1
+Documentation=https://www.klipper3d.org/
+After=network-online.target
+Wants=udev.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+User=${BASE_USER}
+RemainAfterExit=yes
+WorkingDirectory=/home/${BASE_USER}/klipper
+EnvironmentFile=/home/${BASE_USER}/printer_data/systemd/klipper.env
+ExecStart=/home/${BASE_USER}/klippy-env/bin/python \$KLIPPER_ARGS
+Restart=always
+RestartSec=10
+EOF
+
+sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/klipper.env <<EOF
+KLIPPER_ARGS="/home/'"${BASE_USER}"'/klipper/klippy/klippy.py /home/'"${BASE_USER}"'/printer_data/config/printer.cfg -l /home/'"${BASE_USER}"'/printer_data/logs/klippy.log -I /home/'"${BASE_USER}"'/printer_data/comms/klippy.serial -a /home/'"${BASE_USER}"'/printer_data/comms/klippy.sock"
+EOF'
+systemctl enable klipper.service
+
+# 4) Clone Moonraker and create its venv
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/moonraker/.git" ]; then
+    git clone https://github.com/Arksine/moonraker.git
+  else
+    cd moonraker && git fetch --all -p && git reset --hard origin/master
+  fi
+  cd ~
+  if [ ! -d "$HOME/moonraker-env" ]; then
+    virtualenv -p python3 ./moonraker-env
+  fi
+  ./moonraker-env/bin/pip install -r ./moonraker/scripts/moonraker-requirements.txt
+'
+
+# 5) Minimal Moonraker config with trusted_clients and CORS
+sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/config/moonraker.conf <<EOF
+[server]
+host: 0.0.0.0
+port: 7125
+max_upload_size: 1024
+klippy_uds_address: ~/printer_data/comms/klippy.sock
+
+[file_manager]
+enable_object_processing: False
+
+[authorization]
+cors_domains:
+    *://my.mainsail.xyz
+    *://*.local
+    *://*.lan
+trusted_clients:
+    10.0.0.0/8
+    127.0.0.0/8
+    169.254.0.0/16
+    172.16.0.0/12
+    192.168.0.0/16
+    FE80::/10
+    ::1/128
+
+[octoprint_compat]
+[history]
+[announcements]
+subscriptions:
+    mainsail
+
+[update_manager]
+refresh_interval: 168
+enable_auto_refresh: True
+
+[update_manager mainsail]
+type: web
+channel: stable
+repo: mainsail-crew/mainsail
+path: ~/mainsail
+EOF'
+
+# 6) Moonraker systemd unit and env
+cat >/etc/systemd/system/moonraker.service <<EOF
+#Systemd moonraker Service
+[Unit]
+Description=API Server for Klipper SV1
+Requires=network-online.target
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+User=${BASE_USER}
+SupplementaryGroups=moonraker-admin
+RemainAfterExit=yes
+WorkingDirectory=/home/${BASE_USER}/moonraker
+EnvironmentFile=/home/${BASE_USER}/printer_data/systemd/moonraker.env
+ExecStart=/home/${BASE_USER}/moonraker-env/bin/python \$MOONRAKER_ARGS
+Restart=always
+RestartSec=10
+EOF
+
+sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/moonraker.env <<EOF
+MOONRAKER_ARGS="/home/'"${BASE_USER}"'/moonraker/moonraker/moonraker.py -d /home/'"${BASE_USER}"'/printer_data"
+EOF'
+systemctl enable moonraker.service
+
+# 7) Apply Moonraker PolicyKit rules
+sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
+
+# 8) NGINX as reverse proxy + static hosting for Mainsail
+apt-get install -y nginx
+# upstreams
+cat >/etc/nginx/conf.d/upstreams.conf <<'EOF'
+# /etc/nginx/conf.d/upstreams.conf
+upstream apiserver {
+    ip_hash;
+    server 127.0.0.1:7125;
+}
+upstream mjpgstreamer1 { ip_hash; server 127.0.0.1:8080; }
+upstream mjpgstreamer2 { ip_hash; server 127.0.0.1:8081; }
+upstream mjpgstreamer3 { ip_hash; server 127.0.0.1:8082; }
+upstream mjpgstreamer4 { ip_hash; server 127.0.0.1:8083; }
+EOF
+# vars
+cat >/etc/nginx/conf.d/common_vars.conf <<'EOF'
+# /etc/nginx/conf.d/common_vars.conf
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+EOF
+# site
+cat >/etc/nginx/sites-available/mainsail <<EOF
+# /etc/nginx/sites-available/mainsail
+server {
+    listen 80 default_server;
+    # listen [::]:80 default_server;
+
+    access_log /var/log/nginx/mainsail-access.log;
+    error_log  /var/log/nginx/mainsail-error.log;
+
+    # gzip (disable on tiny SBCs if needed)
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_proxied expired no-cache no-store private auth;
+    gzip_comp_level 4;
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/x-javascript application/json application/xml;
+
+    # web_path from mainsail static files
+    root /home/${BASE_USER}/mainsail;
+    index index.html;
+    server_name _;
+
+    client_max_body_size 0;
+    proxy_request_buffering off;
+
+    location / { try_files \$uri \$uri/ /index.html; }
+    location = /index.html { add_header Cache-Control "no-store, no-cache, must-revalidate"; }
+
+    location /websocket {
+        proxy_pass http://apiserver/websocket;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_read_timeout 86400;
+    }
+    location ~ ^/(printer|api|access|machine|server)/ {
+        proxy_pass http://apiserver\$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Scheme \$scheme;
+    }
+    location /webcam/  { postpone_output 0; proxy_buffering off; proxy_ignore_headers X-Accel-Buffering; access_log off; error_log off; proxy_pass http://mjpgstreamer1/; }
+    location /webcam2/ { postpone_output 0; proxy_buffering off; proxy_ignore_headers X-Accel-Buffering; access_log off; error_log off; proxy_pass http://mjpgstreamer2/; }
+    location /webcam3/ { postpone_output 0; proxy_buffering off; proxy_ignore_headers X-Accel-Buffering; access_log off; error_log off; proxy_pass http://mjpgstreamer3/; }
+    location /webcam4/ { postpone_output 0; proxy_buffering off; proxy_ignore_headers X-Accel-Buffering; access_log off; error_log off; proxy_pass http://mjpgstreamer4/; }
+}
+EOF
+
+# activate site
+sudo -u "${BASE_USER}" mkdir -p /home/"${BASE_USER}"/mainsail
+rm -f /etc/nginx/sites-enabled/default || true
+ln -sf /etc/nginx/sites-available/mainsail /etc/nginx/sites-enabled/mainsail
+systemctl restart nginx
+
+# 9) Download latest Mainsail release into user's web root
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~/mainsail
+  wget -q -O mainsail.zip https://github.com/mainsail-crew/mainsail/releases/latest/download/mainsail.zip
+  unzip -o mainsail.zip
+  rm -f mainsail.zip
+'
+
+# 10) Bookworm permission tweak: allow nginx (www-data) to traverse home
+gpasswd -a www-data "${BASE_USER}" || true
+chmod g+x /home/"${BASE_USER}"
+
+###############################################################################
+### End Mainsail Manual Setup                                                ###
+###############################################################################
+
+# --- Recommended extras ---
+
+# 1) Let your user talk to USB serial boards (SKR, Arduino, etc.)
+usermod -aG dialout,tty,video,render,input "${BASE_USER}"
+
+# 2) Install Klipper’s udev rules so serial devices get stable names
+install -m 0644 /home/${BASE_USER}/klipper/scripts/klipper-udev.rules \
+  /etc/udev/rules.d/99-klipper.rules
+udevadm control --reload-rules || true
+udevadm trigger || true
+
+# 3) Make sure TLS certs are present so the GitHub mainsail.zip download never fails
+apt-get install -y ca-certificates
+update-ca-certificates || true
+
+# 4) (Optional but nice) Keep pip modern in each venv to avoid build quirks
+sudo -u "${BASE_USER}" /home/${BASE_USER}/klippy-env/bin/pip -q install -U pip wheel
+sudo -u "${BASE_USER}" /home/${BASE_USER}/moonraker-env/bin/pip -q install -U pip wheel
+
+# 5) Ensure nginx starts on first boot (the site is already enabled in your script)
+systemctl enable nginx
+
+
+# NTP servers
 echo "server time.nist.gov" >> /etc/ntp.conf
 echo "server ntp.ubuntu.com" >> /etc/ntp.conf
 
-#cleanup
+# cleanup
 apt-get clean
 apt-get autoremove -y

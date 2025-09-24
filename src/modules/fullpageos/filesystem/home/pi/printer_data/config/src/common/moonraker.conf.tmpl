@@ -1,0 +1,52 @@
+[server]
+host: 0.0.0.0
+port: 7125
+klippy_uds_address: /tmp/klippy_uds
+
+[data_store]
+temperature_store_size: 600
+gcode_store_size: 1000
+
+[announcements]
+subscriptions: re
+dev_mode: True
+
+[file_manager]
+[timelapse]
+[authorization]
+force_logins: true
+
+cors_domains:
+  *.local
+  *.lan
+
+trusted_clients:
+  10.0.0.0/8
+  127.0.0.0/8
+  169.254.0.0/16
+  172.16.0.0/12
+  192.168.0.0/16
+  141.215.0.0/16
+  FE80::/10
+  ::1/128
+
+[history]
+
+[octoprint_compat]
+
+[update_manager]
+enable_auto_refresh: True
+enable_system_updates: True
+channel: dev
+
+[update_manager klipper_config]
+type: git_repo
+channel: beta
+path: ~/klipper_config
+origin: https://github.com/re3Dprinting/klipper_config.git
+primary_branch: develop
+is_system_service: True
+
+
+
+

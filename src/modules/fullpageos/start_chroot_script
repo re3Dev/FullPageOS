@@ -416,27 +416,39 @@ chmod g+x /home/"${BASE_USER}"
 ### End Mainsail Manual Setup                                                ###
 ###############################################################################
 
-# --- Recommended extras ---
+# --- Recommended extras (safe order & guards) ---
 
 # 1) Let your user talk to USB serial boards (SKR, Arduino, etc.)
 usermod -aG dialout,tty,video,render,input "${BASE_USER}"
 
-# 2) Install Klipper’s udev rules so serial devices get stable names
-install -m 0644 /home/${BASE_USER}/klipper/scripts/klipper-udev.rules \
-  /etc/udev/rules.d/99-klipper.rules
-udevadm control --reload-rules || true
-udevadm trigger || true
+# 2) Install Klipper’s udev rules *after* Klipper has been cloned
+#    (the clone happens earlier in the script under /home/$BASE_USER/klipper)
+RULE_SRC="/home/${BASE_USER}/klipper/scripts/klipper-udev.rules"
+RULE_DST="/etc/udev/rules.d/99-klipper.rules"
 
-# 3) Make sure TLS certs are present so the GitHub mainsail.zip download never fails
-apt-get install -y ca-certificates
+if [ -f "${RULE_SRC}" ]; then
+  install -D -m 0644 "${RULE_SRC}" "${RULE_DST}"
+  udevadm control --reload-rules || true
+  udevadm trigger || true
+else
+  echo "WARN: ${RULE_SRC} not found; skipping udev rule install (will not fail build)."
+fi
+
+# 3) Make sure TLS certs are present for GitHub downloads
+apt-get install -y --no-install-recommends ca-certificates
 update-ca-certificates || true
 
-# 4) (Optional but nice) Keep pip modern in each venv to avoid build quirks
-sudo -u "${BASE_USER}" /home/${BASE_USER}/klippy-env/bin/pip -q install -U pip wheel
-sudo -u "${BASE_USER}" /home/${BASE_USER}/moonraker-env/bin/pip -q install -U pip wheel
+# 4) (Optional) Keep pip modern in each venv
+if [ -x "/home/${BASE_USER}/klippy-env/bin/pip" ]; then
+  sudo -u "${BASE_USER}" /home/${BASE_USER}/klippy-env/bin/pip -q install -U pip wheel || true
+fi
+if [ -x "/home/${BASE_USER}/moonraker-env/bin/pip" ]; then
+  sudo -u "${BASE_USER}" /home/${BASE_USER}/moonraker-env/bin/pip -q install -U pip wheel || true
+fi
 
-# 5) Ensure nginx starts on first boot (the site is already enabled in your script)
+# 5) Ensure nginx starts on first boot
 systemctl enable nginx
+
 
 
 # NTP servers

@@ -180,7 +180,7 @@ apt-get install -y \
   liblmdb-dev libsodium-dev zlib1g-dev libjpeg-dev packagekit wireless-tools
 
 # 1) Create the directory structure
-sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{config,logs,gcodes,systemd,comms} && touch ~/printer_data/config/printer.cfg'
+sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,gcodes,systemd,comms} '
 
 # 2) Clone Klipper and create its venv
 sudo -u "${BASE_USER}" bash -lc '
@@ -241,47 +241,7 @@ sudo -u "${BASE_USER}" bash -lc '
   ./moonraker-env/bin/pip install -r ./moonraker/scripts/moonraker-requirements.txt
 '
 
-# 5) Minimal Moonraker config with trusted_clients and CORS
-sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/config/moonraker.conf <<EOF
-[server]
-host: 0.0.0.0
-port: 7125
-max_upload_size: 1024
-klippy_uds_address: ~/printer_data/comms/klippy.sock
 
-[file_manager]
-enable_object_processing: False
-
-[authorization]
-cors_domains:
-    *://my.mainsail.xyz
-    *://*.local
-    *://*.lan
-trusted_clients:
-    10.0.0.0/8
-    127.0.0.0/8
-    169.254.0.0/16
-    172.16.0.0/12
-    192.168.0.0/16
-    FE80::/10
-    ::1/128
-
-[octoprint_compat]
-[history]
-[announcements]
-subscriptions:
-    mainsail
-
-[update_manager]
-refresh_interval: 168
-enable_auto_refresh: True
-
-[update_manager mainsail]
-type: web
-channel: stable
-repo: mainsail-crew/mainsail
-path: ~/mainsail
-EOF'
 
 # 6) Moonraker systemd unit and env
 cat >/etc/systemd/system/moonraker.service <<EOF

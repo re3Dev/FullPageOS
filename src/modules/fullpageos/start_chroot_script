@@ -16,6 +16,7 @@ unpack /filesystem/root_init /
 
 apt-get update
 
+# Keep the image lean
 echo 'APT::Install-Recommends "0"; APT::Install-Suggests "0";' >/etc/apt/apt.conf.d/99norecommends
 cat >/etc/dpkg/dpkg.cfg.d/99nodoc <<'EOF'
 path-exclude=/usr/share/doc/*
@@ -158,7 +159,7 @@ fi
 
 # Toolchains (from docs - Klipper deps)
 apt-get install -y --no-install-recommends \
-  python3-virtualenv python3-dev libffi-dev build-essential libncurses-dev \
+  python3-virtualenv python3-venv python3-dev libffi-dev build-essential libncurses-dev \
   avrdude gcc-avr binutils-avr avr-libc stm32flash dfu-util \
   libnewlib-arm-none-eabi gcc-arm-none-eabi binutils-arm-none-eabi \
   libusb-1.0-0-dev libusb-1.0-0 ca-certificates unzip curl
@@ -167,7 +168,7 @@ rm -rf /var/lib/apt/lists/*
 
 ###############################################################################
 ### Mainsail Manual Setup (Klipper + Moonraker + NGINX + Mainsail static) #####
-### Based on https://docs.mainsail.xyz/setup/getting-started/manual-setup
+### (Leaves ~/printer_data/config/* untouched)                               ###
 ###############################################################################
 
 # 0) Base packages required by the guide (git, unzip already present above)
@@ -179,9 +180,11 @@ apt-get install -y \
   libopenjp2-7 python3-libgpiod curl libcurl4-openssl-dev libssl-dev \
   liblmdb-dev libsodium-dev zlib1g-dev libjpeg-dev packagekit wireless-tools \
   python3-git
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 
-# 1) Create the directory structure
-sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,gcodes,systemd,comms} '
+# 1) Create the directory structure (NO config/)
+sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,gcodes,systemd,comms}'
 
 # 2) Clone Klipper and create its venv
 sudo -u "${BASE_USER}" bash -lc '
@@ -226,59 +229,38 @@ KLIPPER_ARGS="/home/'"${BASE_USER}"'/klipper/klippy/klippy.py /home/'"${BASE_USE
 EOF'
 systemctl enable klipper.service
 
-# 4) Clone Moonraker and install it
-sudo -u "${BASE_USER}" bash -lc '
-  set -e
-  cd ~
-  if [ ! -d "$HOME/moonraker/.git" ]; then
-    git clone https://github.com/Arksine/moonraker
-  else
-    cd moonraker && git fetch --all -p && git reset --hard origin/master
-  fi
-  if [ ! -d "$HOME/moonraker-env" ]; then
-    virtualenv -p python3 ./moonraker-env
-  fi
-  ./moonraker-env/bin/pip install -r ./moonraker/scripts/moonraker-requirements.txt
-  cd ~/moonraker
-  ./scripts/install-moonraker.sh
-'
+# 4) Clone Moonraker and install it (root-run; safe for nosuid chroot)
+export HOME="/home/${BASE_USER}"
+export USER="${BASE_USER}"
 
-# 5) Run initial printer setup
-sudo -u "${BASE_USER}" bash -lc '
-  cd ~/printer_data/config/src
-  python3 setup_printer.py
-'
+# ensure repo
+if [ ! -d "/home/${BASE_USER}/moonraker/.git" ]; then
+  sudo -u "${BASE_USER}" bash -lc 'git clone https://github.com/Arksine/moonraker.git ~/moonraker'
+else
+  sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && git fetch --all -p && git reset --hard origin/master'
+fi
 
-# 6) Moonraker systemd unit and env
-cat >/etc/systemd/system/moonraker.service <<EOF
-#Systemd moonraker Service
-[Unit]
-Description=API Server for Klipper SV1
-Requires=network-online.target
-After=network-online.target
+# data dirs (do NOT touch ~/printer_data/config)
+sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,systemd,comms,gcodes}'
 
-[Install]
-WantedBy=multi-user.target
+# run installer from source; -z = skip systemctl actions during image build
+cd "/home/${BASE_USER}/moonraker/scripts"
+./install-moonraker.sh -z
 
-[Service]
-Type=simple
-User=${BASE_USER}
-SupplementaryGroups=moonraker-admin
-RemainAfterExit=yes
-WorkingDirectory=/home/${BASE_USER}/moonraker
-EnvironmentFile=/home/${BASE_USER}/printer_data/systemd/moonraker.env
-ExecStart=/home/${BASE_USER}/moonraker-env/bin/python \$MOONRAKER_ARGS
-Restart=always
-RestartSec=10
-EOF
-
-sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/moonraker.env <<EOF
-MOONRAKER_ARGS="/home/'"${BASE_USER}"'/moonraker/moonraker/moonraker.py -d /home/'"${BASE_USER}"'/printer_data"
-EOF'
-systemctl enable moonraker.service
-
-# 7) Apply Moonraker PolicyKit rules
+# PolKit rules (harmless if re-run)
 sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
+
+# make systemd aware of new unit and enable for first boot
+systemctl daemon-reload || true
+systemctl enable moonraker || true
+systemctl enable nginx || true
+
+# 5) Run initial printer setup (guarded; optional)
+sudo -u "${BASE_USER}" bash -lc '
+  if [ -f ~/printer_data/config/src/setup_printer.py ]; then
+    python3 ~/printer_data/config/src/setup_printer.py || true
+  fi
+'
 
 # 8) NGINX as reverse proxy + static hosting for Mainsail
 apt-get install -y nginx
@@ -378,10 +360,11 @@ sudo -u "${BASE_USER}" bash -lc '
 gpasswd -a www-data "${BASE_USER}" || true
 chmod g+x /home/"${BASE_USER}"
 
-# 11) Run printer reload to configure services
+# 11) Run printer reload to configure services (guarded; optional)
 sudo -u "${BASE_USER}" bash -lc '
-  cd ~/printer_data/config/src
-  python3 reload.py
+  if [ -f ~/printer_data/config/src/reload.py ]; then
+    python3 ~/printer_data/config/src/reload.py || true
+  fi
 '
 
 ###############################################################################
@@ -394,7 +377,6 @@ sudo -u "${BASE_USER}" bash -lc '
 usermod -aG dialout,tty,video,render,input "${BASE_USER}"
 
 # 2) Install Klipper’s udev rules *after* Klipper has been cloned
-#    (the clone happens earlier in the script under /home/$BASE_USER/klipper)
 RULE_SRC="/home/${BASE_USER}/klipper/scripts/klipper-udev.rules"
 RULE_DST="/etc/udev/rules.d/99-klipper.rules"
 
@@ -414,14 +396,13 @@ update-ca-certificates || true
 if [ -x "/home/${BASE_USER}/klippy-env/bin/pip" ]; then
   sudo -u "${BASE_USER}" /home/${BASE_USER}/klippy-env/bin/pip -q install -U pip wheel || true
 fi
+# Moonraker venv is created by the installer; if you want to bump pip there too:
 if [ -x "/home/${BASE_USER}/moonraker-env/bin/pip" ]; then
   sudo -u "${BASE_USER}" /home/${BASE_USER}/moonraker-env/bin/pip -q install -U pip wheel || true
 fi
 
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx
-
-
 
 # NTP servers
 echo "server time.nist.gov" >> /etc/ntp.conf

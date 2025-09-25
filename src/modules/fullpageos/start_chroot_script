@@ -225,25 +225,24 @@ KLIPPER_ARGS="/home/'"${BASE_USER}"'/klipper/klippy/klippy.py /home/'"${BASE_USE
 EOF'
 systemctl enable klipper.service
 
-# 4) Clone Moonraker and create its venv
+# 4) Clone Moonraker and install it
 sudo -u "${BASE_USER}" bash -lc '
   set -e
   cd ~
   if [ ! -d "$HOME/moonraker/.git" ]; then
-    git clone https://github.com/Arksine/moonraker.git
+    git clone https://github.com/Arksine/moonraker
   else
     cd moonraker && git fetch --all -p && git reset --hard origin/master
   fi
-  cd ~
   if [ ! -d "$HOME/moonraker-env" ]; then
     virtualenv -p python3 ./moonraker-env
   fi
   ./moonraker-env/bin/pip install -r ./moonraker/scripts/moonraker-requirements.txt
+  cd ~/moonraker
+  ./scripts/install-moonraker.sh
 '
 
-
-
-# 6) Moonraker systemd unit and env
+# 5) Moonraker systemd unit and env
 cat >/etc/systemd/system/moonraker.service <<EOF
 #Systemd moonraker Service
 [Unit]

@@ -177,7 +177,8 @@ apt-get install -y git unzip
 # Moonraker additional deps (Bookworm set)
 apt-get install -y \
   libopenjp2-7 python3-libgpiod curl libcurl4-openssl-dev libssl-dev \
-  liblmdb-dev libsodium-dev zlib1g-dev libjpeg-dev packagekit wireless-tools
+  liblmdb-dev libsodium-dev zlib1g-dev libjpeg-dev packagekit wireless-tools \
+  python3-git
 
 # 1) Create the directory structure
 sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,gcodes,systemd,comms} '
@@ -242,7 +243,13 @@ sudo -u "${BASE_USER}" bash -lc '
   ./scripts/install-moonraker.sh
 '
 
-# 5) Moonraker systemd unit and env
+# 5) Run initial printer setup
+sudo -u "${BASE_USER}" bash -lc '
+  cd ~/printer_data/config/src
+  python3 setup_printer.py
+'
+
+# 6) Moonraker systemd unit and env
 cat >/etc/systemd/system/moonraker.service <<EOF
 #Systemd moonraker Service
 [Unit]
@@ -370,6 +377,12 @@ sudo -u "${BASE_USER}" bash -lc '
 # 10) Bookworm permission tweak: allow nginx (www-data) to traverse home
 gpasswd -a www-data "${BASE_USER}" || true
 chmod g+x /home/"${BASE_USER}"
+
+# 11) Run printer reload to configure services
+sudo -u "${BASE_USER}" bash -lc '
+  cd ~/printer_data/config/src
+  python3 reload.py
+'
 
 ###############################################################################
 ### End Mainsail Manual Setup                                                ###

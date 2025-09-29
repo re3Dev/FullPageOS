@@ -229,25 +229,54 @@ KLIPPER_ARGS="/home/'"${BASE_USER}"'/klipper/klippy/klippy.py /home/'"${BASE_USE
 EOF'
 systemctl enable klipper.service
 
-# 4) Clone Moonraker and install it (root-run; safe for nosuid chroot)
-export HOME="/home/${BASE_USER}"
-export USER="${BASE_USER}"
+# 4) Moonraker - manual install (no installer script)
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/moonraker/.git" ]; then
+    git clone https://github.com/Arksine/moonraker.git
+  else
+    cd moonraker && git fetch --all -p && git reset --hard origin/master
+  fi
 
-# ensure repo
-if [ ! -d "/home/${BASE_USER}/moonraker/.git" ]; then
-  sudo -u "${BASE_USER}" bash -lc 'git clone https://github.com/Arksine/moonraker.git ~/moonraker'
-else
-  sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && git fetch --all -p && git reset --hard origin/master'
-fi
+  # Make data dirs (but do NOT create/touch ~/printer_data/config)
+  mkdir -p ~/printer_data/{logs,systemd,comms,gcodes}
 
-# data dirs (do NOT touch ~/printer_data/config)
-sudo -u "${BASE_USER}" bash -lc 'mkdir -p ~/printer_data/{logs,systemd,comms,gcodes}'
+  # Create Moonraker venv and install requirements
+  cd ~
+  if [ ! -d "$HOME/moonraker-env" ]; then
+    python3 -m venv ~/moonraker-env
+  fi
+  ~/moonraker-env/bin/pip install --upgrade pip wheel
+  ~/moonraker-env/bin/pip install -r ~/moonraker/scripts/moonraker-requirements.txt
+'
 
-# run installer from source; -z = skip systemctl actions during image build
-cd "/home/${BASE_USER}/moonraker/scripts"
-./install-moonraker.sh -z
+# Systemd unit + env for Moonraker (root writes files; points at user's paths)
+cat >/etc/systemd/system/moonraker.service <<EOF
+[Unit]
+Description=API Server for Klipper (Moonraker)
+Requires=network-online.target
+After=network-online.target
 
-# PolKit rules (harmless if re-run)
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+User=${BASE_USER}
+SupplementaryGroups=moonraker-admin
+WorkingDirectory=/home/${BASE_USER}/moonraker
+EnvironmentFile=/home/${BASE_USER}/printer_data/systemd/moonraker.env
+ExecStart=/home/${BASE_USER}/moonraker-env/bin/python \$MOONRAKER_ARGS
+Restart=always
+RestartSec=10
+EOF
+
+sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/moonraker.env <<EOF
+MOONRAKER_ARGS="/home/'"${BASE_USER}"'/moonraker/moonraker/moonraker.py -d /home/'"${BASE_USER}"'/printer_data"
+EOF'
+
+# PolKit rules (optional; harmless if rerun later)
 sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
 
 # make systemd aware of new unit and enable for first boot

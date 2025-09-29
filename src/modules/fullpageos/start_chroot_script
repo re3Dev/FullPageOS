@@ -282,7 +282,7 @@ sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules
 # make systemd aware of new unit and enable for first boot
 systemctl daemon-reload || true
 systemctl enable moonraker || true
-systemctl enable nginx || true
+
 
 # 5) Run initial printer setup (guarded; optional)
 sudo -u "${BASE_USER}" bash -lc '

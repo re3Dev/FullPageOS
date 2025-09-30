@@ -243,7 +243,6 @@ sudo -u "${BASE_USER}" bash -lc '
   mkdir -p ~/printer_data/{logs,systemd,comms,gcodes}
 
   # Create Moonraker venv and install requirements
-  cd ~
   if [ ! -d "$HOME/moonraker-env" ]; then
     python3 -m venv ~/moonraker-env
   fi
@@ -251,10 +250,26 @@ sudo -u "${BASE_USER}" bash -lc '
   ~/moonraker-env/bin/pip install -r ~/moonraker/scripts/moonraker-requirements.txt
 '
 
-# Systemd unit + env for Moonraker (root writes files; points at user's paths)
+# --- Make manual install equivalent to the official installer ---
+
+# 1) Ensure the policy group exists and the user is in it
+getent group moonraker-admin >/dev/null 2>&1 || groupadd --system moonraker-admin
+usermod -aG moonraker-admin "${BASE_USER}"
+
+# 2) Ensure env dir exists (owned by the user)
+sudo -u "${BASE_USER}" mkdir -p /home/"${BASE_USER}"/printer_data/systemd
+
+# 3) Write the environment file if missing (do not overwrite if you already ship one)
+if [ ! -f /home/"${BASE_USER}"/printer_data/systemd/moonraker.env ]; then
+  sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/moonraker.env <<EOF
+MOONRAKER_ARGS="/home/'"${BASE_USER}"'/moonraker/moonraker/moonraker.py -d /home/'"${BASE_USER}"'/printer_data"
+EOF'
+fi
+
+# 4) Systemd unit (points to user's paths)
 cat >/etc/systemd/system/moonraker.service <<EOF
 [Unit]
-Description=API Server for Klipper (Moonraker)
+Description=API Server for Klipper SV1
 Requires=network-online.target
 After=network-online.target
 
@@ -272,17 +287,14 @@ Restart=always
 RestartSec=10
 EOF
 
-sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/systemd/moonraker.env <<EOF
-MOONRAKER_ARGS="/home/'"${BASE_USER}"'/moonraker/moonraker/moonraker.py -d /home/'"${BASE_USER}"'/printer_data"
-EOF'
-
-# PolKit rules (optional; harmless if rerun later)
+# 5) PolKit rules (same script the installer runs)
 sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
 
-# make systemd aware of new unit and enable for first boot
+# 6) Enable for first boot
 systemctl daemon-reload || true
 systemctl enable moonraker || true
 systemctl enable nginx || true
+
 
 # 5) Run initial printer setup (guarded; optional)
 sudo -u "${BASE_USER}" bash -lc '

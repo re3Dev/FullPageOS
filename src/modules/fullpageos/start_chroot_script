@@ -287,8 +287,16 @@ Restart=always
 RestartSec=10
 EOF
 
-# 5) PolKit rules (same script the installer runs)
-sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
+# PolKit rules: run as root (nosuid chroot-safe) and ensure group exists
+getent group moonraker-admin >/dev/null 2>&1 || groupadd --system moonraker-admin
+usermod -aG moonraker-admin "${BASE_USER}"
+
+if [ -x "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" ]; then
+  HOME="/home/${BASE_USER}" USER="${BASE_USER}" \
+  /bin/bash "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" || true
+else
+  echo "WARN: set-policykit-rules.sh not found; skipping."
+fi
 
 ###############################################################################
 # Moonraker-timelapse (non-interactive install; no prompts; no config edits)
@@ -328,7 +336,7 @@ fi
 sudo -u "${BASE_USER}" bash -lc 'install -D -m 0644 \
   ~/moonraker-timelapse/klipper_macro/timelapse.cfg \
   ~/printer_data/config/timelapse.cfg'
-  
+
 # 6) Enable for first boot
 systemctl daemon-reload || true
 systemctl enable moonraker || true

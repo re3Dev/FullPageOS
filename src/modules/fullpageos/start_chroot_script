@@ -290,6 +290,40 @@ EOF
 # 5) PolKit rules (same script the installer runs)
 sudo -u "${BASE_USER}" bash -lc 'cd ~/moonraker && ./scripts/set-policykit-rules.sh || true'
 
+###############################################################################
+# Moonraker-timelapse (non-interactive install; no prompts; no config edits)
+###############################################################################
+
+# 0) Ensure ffmpeg for rendering (required by timelapse)
+apt-get update
+apt-get install -y --no-install-recommends ffmpeg
+
+# 1) Clone the plugin repo into the user's home
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/moonraker-timelapse/.git" ]; then
+    git clone https://github.com/mainsail-crew/moonraker-timelapse.git
+  else
+    cd moonraker-timelapse && git fetch --all -p && git reset --hard origin/main
+  fi
+'
+
+# 2) Install the Moonraker component by symlinking it into Moonraker’s components dir
+#    (avoids the interactive make install script)
+TIMELAPSE_SRC="/home/${BASE_USER}/moonraker-timelapse/component/timelapse.py"
+TIMELAPSE_DST="/home/${BASE_USER}/moonraker/moonraker/components/timelapse.py"
+
+if [ -f "${TIMELAPSE_SRC}" ]; then
+  # Ensure components dir exists and belongs to the user
+  install -d -o "${BASE_USER}" -g "${BASE_USER}" "/home/${BASE_USER}/moonraker/moonraker/components"
+  # Use a symlink so future git updates are picked up without copying
+  ln -sf "${TIMELAPSE_SRC}" "${TIMELAPSE_DST}"
+  chown -h "${BASE_USER}:${BASE_USER}" "${TIMELAPSE_DST}"
+else
+  echo "WARN: ${TIMELAPSE_SRC} not found; skipping timelapse component install."
+fi
+
 # 6) Enable for first boot
 systemctl daemon-reload || true
 systemctl enable moonraker || true

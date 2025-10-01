@@ -287,16 +287,55 @@ Restart=always
 RestartSec=10
 EOF
 
-# PolKit rules: run as root (nosuid chroot-safe) and ensure group exists
+# --- Moonraker PolicyKit wiring (non-interactive, chroot-safe) ---
+
+# 1) Ensure polkit and dbus are installed (the agent will run on first boot)
+apt-get update
+apt-get install -y --no-install-recommends policykit-1 dbus
+
+# 2) Create the policy group and add your user
 getent group moonraker-admin >/dev/null 2>&1 || groupadd --system moonraker-admin
 usermod -aG moonraker-admin "${BASE_USER}"
 
-if [ -x "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" ]; then
-  HOME="/home/${BASE_USER}" USER="${BASE_USER}" \
-  /bin/bash "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" || true
+# 3) Install the Moonraker polkit rule (from the repo if present; otherwise write a minimal rule)
+RULE_DST="/etc/polkit-1/rules.d/50-moonraker.rules"
+RULE_SRC="/home/${BASE_USER}/moonraker/scripts/policykit/50-moonraker.rules"
+
+if [ -f "${RULE_SRC}" ]; then
+  install -m 0644 -o root -g root "${RULE_SRC}" "${RULE_DST}"
 else
-  echo "WARN: set-policykit-rules.sh not found; skipping."
+  # Fallback rule that allows common actions for the moonraker-admin group
+  cat > "${RULE_DST}" <<'EOF'
+polkit.addRule(function(action, subject) {
+  var ok = subject.isInGroup("moonraker-admin");
+  var acts = [
+    "org.freedesktop.systemd1.manage-units",
+    "org.freedesktop.systemd1.manage-unit-files",
+    "org.freedesktop.login1.reboot",
+    "org.freedesktop.login1.power-off",
+    "org.freedesktop.timedate1.set-time",
+    "org.freedesktop.timedate1.set-timezone",
+    "org.freedesktop.hostname1.set-static-hostname"
+  ];
+  if (ok && acts.indexOf(action.id) >= 0) {
+    return polkit.Result.YES;
+  }
+});
+EOF
+  chown root:root "${RULE_DST}"
+  chmod 0644 "${RULE_DST}"
 fi
+
+# 4) Make sure Moonraker runs with the group at runtime
+# (Your unit already has 'SupplementaryGroups=moonraker-admin'; if not, add it.)
+if ! grep -q '^SupplementaryGroups=.*moonraker-admin' /etc/systemd/system/moonraker.service; then
+  sed -i 's/^\[Service\]/[Service]\nSupplementaryGroups=moonraker-admin/' /etc/systemd/system/moonraker.service
+fi
+
+# 5) Reload rules and systemd (polkit will pick up the new rule on boot)
+udevadm control --reload-rules || true
+systemctl daemon-reload || true
+# (polkitd will start on first boot; restarting it in chroot is optional)
 
 ###############################################################################
 # Moonraker-timelapse (non-interactive install; no prompts; no config edits)

@@ -324,6 +324,11 @@ else
   echo "WARN: ${TIMELAPSE_SRC} not found; skipping timelapse component install."
 fi
 
+# --- Copy timelapse.cfg into printer_data/config (simple) ---
+sudo -u "${BASE_USER}" bash -lc 'install -D -m 0644 \
+  ~/moonraker-timelapse/klipper_macro/timelapse.cfg \
+  ~/printer_data/config/timelapse.cfg'
+  
 # 6) Enable for first boot
 systemctl daemon-reload || true
 systemctl enable moonraker || true

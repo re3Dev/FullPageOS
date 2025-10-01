@@ -529,6 +529,16 @@ if [ -x "/home/${BASE_USER}/moonraker-env/bin/pip" ]; then
   sudo -u "${BASE_USER}" /home/${BASE_USER}/moonraker-env/bin/pip -q install -U pip wheel || true
 fi
 
+# --- Clone virtual_keyboard into /home/pi/virtual_keyboard ---
+apt-get update
+sudo -u pi bash -lc '
+  set -e
+  if [ ! -d "$HOME/virtual_keyboard/.git" ]; then
+    git clone https://github.com/re3Dprinting/virtual_keyboard.git ~/virtual_keyboard
+  else
+    cd ~/virtual_keyboard && git fetch --all -p && git reset --hard origin/HEAD
+  fi
+'
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx
 

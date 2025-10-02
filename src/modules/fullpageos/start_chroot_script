@@ -289,17 +289,16 @@ EOF
 
 # --- Moonraker PolicyKit wiring (non-interactive, chroot-safe) ---
 
-# 1) Ensure polkit and dbus are installed (handles split/no-candidate cases)
+# --- PolKit install (force split packages; Bookworm-safe) ---
+set +e
 apt-get update
-
-# If policykit-1 has an installable candidate, use it; otherwise use split packages
-if apt-cache policy policykit-1 2>/dev/null | grep -q 'Candidate: (none)'; then
-  apt-get install -y --no-install-recommends polkitd pkexec libpolkit-gobject-1-0 dbus
-else
-  # Try policykit-1; if it still fails for any reason, fall back to split packages
-  if ! apt-get install -y --no-install-recommends policykit-1 dbus; then
-    apt-get install -y --no-install-recommends polkitd pkexec libpolkit-gobject-1-0 dbus
-  fi
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  polkitd pkexec libpolkit-gobject-1-0 dbus
+rc=$?
+set -e
+if [ $rc -ne 0 ]; then
+  # Fallback for images where pkexec is inside polkitd or naming differs
+  apt-get install -y --no-install-recommends polkitd libpolkit-gobject-1-0 dbus || true
 fi
 
 # Ensure rules dir exists

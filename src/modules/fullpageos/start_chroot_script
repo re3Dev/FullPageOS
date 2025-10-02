@@ -559,6 +559,104 @@ awk '1;/^\/\/ ---------- icon handling/{print "\
 
 
 ###############################################################################
+# Crowsnest (camera/stream management) – non-interactive chroot-safe install
+###############################################################################
+
+# 0) Runtime deps (minimal set; installer may add more if needed)
+apt-get update
+apt-get install -y --no-install-recommends git make ffmpeg v4l-utils libjpeg62-turbo
+
+# 1) Clone/update as the printer user
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/crowsnest/.git" ]; then
+    git clone https://github.com/Klipper-Community/crowsnest.git ~/crowsnest || \
+    git clone https://github.com/mainsail-crew/crowsnest.git ~/crowsnest
+  else
+    cd ~/crowsnest && git fetch --all -p && git reset --hard origin/master || true
+  fi
+'
+
+# 2) Try the upstream installer NON-INTERACTIVELY.
+#    Notes:
+#    - In chroot we are root; sudo inside make should not prompt.
+#    - We pass env hints commonly honored by installers; also pipe a blank "yes"
+#      as a last resort to avoid blocking on incidental prompts.
+set +e
+export DEBIAN_FRONTEND=noninteractive
+export CROWSNEST_NONINTERACTIVE=1
+export CN_NONINTERACTIVE=1
+export CN_ACCEPT_DEFAULTS=1
+export CN_TARGET_USER="${BASE_USER}"
+yes "" | make -C "/home/${BASE_USER}/crowsnest" install
+cn_rc=$?
+set -e
+
+if [ $cn_rc -ne 0 ]; then
+  echo "WARN: crowsnest make install failed, falling back to manual install."
+
+  # ------- Manual install (service + wrapper) -------
+  # Install a simple wrapper to launch crowsnest from the repo.
+  install -D -m 0755 /home/"${BASE_USER}"/crowsnest/tools/crowsnest.sh /usr/local/bin/crowsnest 2>/dev/null || true
+  if [ ! -x /usr/local/bin/crowsnest ]; then
+    # Fallback: create a tiny wrapper if the script path ever changes upstream
+    cat >/usr/local/bin/crowsnest <<'SH'
+#!/bin/sh
+exec /home/'"${BASE_USER}"'/crowsnest/crowsnest "$@"
+SH
+    chmod 0755 /usr/local/bin/crowsnest
+  fi
+
+  # Create a basic systemd unit (points at user's config in printer_data).
+  cat >/etc/systemd/system/crowsnest.service <<EOF
+[Unit]
+Description=Crowsnest camera service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${BASE_USER}
+WorkingDirectory=/home/${BASE_USER}/crowsnest
+# Use user's config in printer_data if present; otherwise /etc/crowsnest.conf
+Environment=CN_CONFIG=/home/${BASE_USER}/printer_data/config/crowsnest.conf
+ExecStart=/usr/local/bin/crowsnest -c \$CN_CONFIG
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Provide a very small default config ONLY if user doesn't already ship one.
+  if [ ! -f "/home/${BASE_USER}/printer_data/config/crowsnest.conf" ]; then
+    sudo -u "${BASE_USER}" bash -lc 'cat > ~/printer_data/config/crowsnest.conf <<EOF
+# Minimal example (disabled by default; edit in Mainsail later)
+[global]
+log_path: ~/printer_data/logs/crowsnest.log
+
+#[streamer usb0]
+#enable: false
+#device: /dev/video0
+#resolution: 1280x720@15
+#rotate: 0
+#decoder: v4l2
+#format: MJPG
+EOF'
+  fi
+
+  systemctl daemon-reload || true
+  systemctl enable crowsnest || true
+else
+  # Upstream installer succeeded; ensure it is enabled on first boot
+  systemctl daemon-reload || true
+  systemctl enable crowsnest || true
+fi
+
+
+
+###############################################################################
 # G-Code Shell Command (non-interactive install; no config edits)
 ###############################################################################
 

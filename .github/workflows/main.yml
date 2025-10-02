@@ -13,7 +13,7 @@ jobs:
     - name: Checkout CustomPiOS
       uses: actions/checkout@v2
       with:
-        repository: 'guysoft/CustomPiOS'
+        repository: 're3Dev/CustomPiOS'
         path: CustomPiOS
     - name: Checkout Project Repository
       uses: actions/checkout@v2

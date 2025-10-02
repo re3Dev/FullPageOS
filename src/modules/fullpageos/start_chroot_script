@@ -562,6 +562,41 @@ awk '1;/^\/\/ ---------- icon handling/{print "\
 && mv /home/pi/virtual_keyboard/background.js.tmp /home/pi/virtual_keyboard/background.js
 
 
+###############################################################################
+# G-Code Shell Command (non-interactive install; no config edits)
+###############################################################################
+
+# 1) Install the Klipper extra
+install -d -o "${BASE_USER}" -g "${BASE_USER}" "/home/${BASE_USER}/klipper/klippy/extras"
+
+# Prefer a local copy if you have one; otherwise fetch from KIAUH upstream
+LOCAL_EXTRA_SRC="/home/${BASE_USER}/gcode_shell_command.py"
+EXTRA_DST="/home/${BASE_USER}/klipper/klippy/extras/gcode_shell_command.py"
+
+if [ -f "${LOCAL_EXTRA_SRC}" ]; then
+  install -m 0644 -o "${BASE_USER}" -g "${BASE_USER}" "${LOCAL_EXTRA_SRC}" "${EXTRA_DST}"
+else
+  # Fetch the known upstream file (idempotent). If this fails, just warn and continue.
+  curl -fsSL -o "${EXTRA_DST}" \
+    "https://raw.githubusercontent.com/dw-0/kiauh/master/resources/gcode_shell_command.py" \
+    || echo "WARN: could not fetch gcode_shell_command.py; skipping copy."
+  chown "${BASE_USER}:${BASE_USER}" "${EXTRA_DST}" 2>/dev/null || true
+  chmod 0644 "${EXTRA_DST}" 2>/dev/null || true
+fi
+
+# 2) Place your shell_command.cfg (no overwrite)
+#    - If you already ship it in the image, this block does nothing.
+#    - If you staged it somewhere else, set SHELLCFG_SRC to that path.
+SHELLCFG_DST="/home/${BASE_USER}/printer_data/config/shell_command.cfg"
+SHELLCFG_SRC="/home/${BASE_USER}/printer_data/config/src/system_config/shell_commands/shell_command.cfg"   # <-- change if your file lives elsewhere
+
+if [ ! -f "${SHELLCFG_DST}" ] && [ -f "${SHELLCFG_SRC}" ]; then
+  install -D -m 0644 -o "${BASE_USER}" -g "${BASE_USER}" "${SHELLCFG_SRC}" "${SHELLCFG_DST}"
+fi
+
+# 3) (Optional) If Klipper might already be running on first boot, ensure the service reloads.
+systemctl daemon-reload || true
+# Do NOT restart Klipper here in the chroot; it will pick up the module on first boot.
 
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx

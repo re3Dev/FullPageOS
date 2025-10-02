@@ -6,32 +6,95 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Update apt
-      run: sudo apt-get update
-    - name: Install Dependencies
-      run: sudo apt install coreutils p7zip-full qemu-user-static python3-git
-    - name: Checkout CustomPiOS
-      uses: actions/checkout@v2
-      with:
-        repository: 're3Dev/CustomPiOS'
-        path: CustomPiOS
-    - name: Checkout Project Repository
-      uses: actions/checkout@v2
-      with:
-        repository: ${{ github.repository }}
-        path: repository
-        submodules: true
-    - name: Download Raspbian Image
-      run: cd repository/src/image && wget -q -c --trust-server-names 'https://downloads.raspberrypi.org/raspios_lite_armhf_latest'
-    - name: Update CustomPiOS Paths
-      run: cd repository/src && ../../CustomPiOS/src/update-custompios-paths
-    - name: Build Image
-      run: sudo modprobe loop && cd repository/src && sudo bash -x ./build_dist
-    - name: Copy Output
-      run: cp ${{ github.workspace }}/repository/src/workspace/*-raspios-*-lite.img build.img
-    - name: Zip Output
-      run: gzip build.img
-    - uses: actions/upload-artifact@v4
-      with:
-        name: build.img.gz
-        path: build.img.gz
+      - name: Update apt
+        run: sudo apt-get update
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get install -y \
+            coreutils p7zip-full qemu-user-static python3-git \
+            curl ca-certificates xz-utils
+
+      # Get CustomPiOS (as before)
+      - name: Checkout CustomPiOS
+        uses: actions/checkout@v4
+        with:
+          repository: guysoft/CustomPiOS
+          path: CustomPiOS
+
+      # Your project (make sure submodules are pulled if you use any)
+      - name: Checkout Project Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: repository
+          submodules: recursive
+
+      # Patch CustomPiOS so any module still trying to install 'policykit-1'
+      # won't break on newer bases (harmless on Bookworm).
+      - name: Patch CustomPiOS policykit usage (Trixie-safe)
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE/CustomPiOS"
+
+          # Replace installs of policykit-1 with split packages
+          grep -Rnl 'policykit-1' src/modules \
+            | xargs -r sed -i -E 's/(apt-get[^;]*install[^;]*)policykit-1/\1polkitd pkexec libpolkit-gobject-1-0 dbus/g'
+
+          # Optional: if modules probe availability, bypass that specific probe
+          grep -Rnl 'is_in_apt[[:space:]]\+policykit-1' src/modules \
+            | xargs -r sed -i 's/is_in_apt[[:space:]]\+policykit-1/true # bypass legacy policykit-1 probe/g' || true
+
+      # Download the newest Bookworm lite armhf image explicitly
+      - name: Download Bookworm RPi OS Lite (armhf)
+        run: |
+          set -e
+          cd repository/src/image
+          BASE="https://downloads.raspberrypi.org/raspios_lite_armhf/images"
+
+          BOOKWORM_URL=$(
+            curl -fsSL "$BASE/" \
+            | grep -oE 'raspios_lite_armhf-[0-9-]+/' \
+            | sort -Vr \
+            | while read -r dir; do
+                curl -fsSL "$BASE/$dir" \
+                | grep -oE 'https?://[^"]*raspios-bookworm-armhf-lite\.img\.xz' \
+                | head -n1 && break
+              done
+          )
+
+          if [ -z "$BOOKWORM_URL" ]; then
+            echo "Could not find a Bookworm armhf lite image under $BASE" >&2
+            exit 1
+          fi
+
+          echo "Downloading: $BOOKWORM_URL"
+          wget -q -c --trust-server-names "$BOOKWORM_URL"
+          wget -q -c --trust-server-names "${BOOKWORM_URL}.sha256" || true
+
+      - name: Update CustomPiOS Paths
+        run: |
+          set -e
+          cd repository/src
+          ../../CustomPiOS/src/update-custompios-paths
+
+      - name: Build Image
+        run: |
+          set -e
+          sudo modprobe loop
+          cd repository/src
+          sudo bash -x ./build_dist
+
+      - name: Copy Output
+        run: |
+          set -e
+          cp "$GITHUB_WORKSPACE"/repository/src/workspace/*-raspios-*-lite.img build.img
+
+      - name: Zip Output
+        run: gzip build.img
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build.img.gz
+          path: build.img.gz

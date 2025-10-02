@@ -289,14 +289,22 @@ EOF
 
 # --- Moonraker PolicyKit wiring (non-interactive, chroot-safe) ---
 
-# 1) Ensure polkit and dbus are installed (handles split packages too)
+# 1) Ensure polkit and dbus are installed (handles split/no-candidate cases)
 apt-get update
-if apt-cache show policykit-1 >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends policykit-1 dbus
-else
+
+# If policykit-1 has an installable candidate, use it; otherwise use split packages
+if apt-cache policy policykit-1 2>/dev/null | grep -q 'Candidate: (none)'; then
   apt-get install -y --no-install-recommends polkitd pkexec libpolkit-gobject-1-0 dbus
+else
+  # Try policykit-1; if it still fails for any reason, fall back to split packages
+  if ! apt-get install -y --no-install-recommends policykit-1 dbus; then
+    apt-get install -y --no-install-recommends polkitd pkexec libpolkit-gobject-1-0 dbus
+  fi
 fi
+
+# Ensure rules dir exists
 install -d -m 0755 /etc/polkit-1/rules.d
+
 
 # 2) Create the policy group and add your user
 getent group moonraker-admin >/dev/null 2>&1 || groupadd --system moonraker-admin

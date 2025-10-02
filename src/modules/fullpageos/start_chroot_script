@@ -288,48 +288,8 @@ RestartSec=10
 EOF
 
 # --- Moonraker PolicyKit rules (no package installs; chroot-safe) ---
+#taken out for sanity
 
-# Ensure rules dir exists
-install -d -m 0755 /etc/polkit-1/rules.d
-
-# Create the policy group and add your user
-getent group moonraker-admin >/dev/null 2>&1 || groupadd --system moonraker-admin
-usermod -aG moonraker-admin "${BASE_USER}"
-
-# Install Moonraker's polkit rule using the repo script (run as root; no sudo)
-if [ -x "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" ]; then
-  HOME="/home/${BASE_USER}" USER="${BASE_USER}" \
-    /bin/bash "/home/${BASE_USER}/moonraker/scripts/set-policykit-rules.sh" || true
-else
-  # Fallback: write a minimal rule if the script isn't present
-  cat >/etc/polkit-1/rules.d/50-moonraker.rules <<'EOF'
-polkit.addRule(function(action, subject) {
-  var ok = subject.isInGroup("moonraker-admin");
-  var acts = [
-    "org.freedesktop.systemd1.manage-units",
-    "org.freedesktop.systemd1.manage-unit-files",
-    "org.freedesktop.login1.reboot",
-    "org.freedesktop.login1.power-off",
-    "org.freedesktop.timedate1.set-time",
-    "org.freedesktop.timedate1.set-timezone",
-    "org.freedesktop.hostname1.set-static-hostname"
-  ];
-  if (ok && acts.indexOf(action.id) >= 0) {
-    return polkit.Result.YES;
-  }
-});
-EOF
-  chown root:root /etc/polkit-1/rules.d/50-moonraker.rules
-  chmod 0644 /etc/polkit-1/rules.d/50-moonraker.rules
-fi
-
-# Ensure Moonraker runs with the group at runtime
-if ! grep -q '^SupplementaryGroups=.*moonraker-admin' /etc/systemd/system/moonraker.service 2>/dev/null; then
-  sed -i 's/^\[Service\]/[Service]\nSupplementaryGroups=moonraker-admin/' /etc/systemd/system/moonraker.service || true
-fi
-
-# Reload units; polkit will read rules on first boot
-systemctl daemon-reload || true
 
 
 

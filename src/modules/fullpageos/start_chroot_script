@@ -539,18 +539,19 @@ sudo -u pi bash -lc '
     cd ~/virtual_keyboard && git fetch --all -p && git reset --hard origin/HEAD
   fi
 '
-# Disable any "open options on first run" behavior
-pushd /home/pi/virtual_keyboard
+# Insert a no-splash init block into background.js
+awk '1;/^\/\/ ---------- icon handling/{print "\
+(async () => {\n\
+  const { openedFirstTime } = await storageGet([\"openedFirstTime\"]);\n\
+  if (openedFirstTime === undefined) {\n\
+    await storageSet({ openedFirstTime: true });\n\
+  }\n\
+})();\n"}' \
+/home/pi/virtual_keyboard/background.js > /home/pi/virtual_keyboard/background.js.tmp \
+&& mv /home/pi/virtual_keyboard/background.js.tmp /home/pi/virtual_keyboard/background.js
 
-# 1) If it uses Chrome extension APIs (common): kill openOptionsPage() on install
-find . -type f -name "*.js" -print0 | xargs -0 sed -i \
-  's/chrome\.runtime\.openOptionsPage();/\/\/ disabled: chrome.runtime.openOptionsPage();/g'
 
-# 2) If it redirects to options.html in plain JS: kill that redirect too
-find . -type f -name "*.js" -print0 | xargs -0 sed -i \
-  's/window\.\(location\|location\.href\)\s*=\s*["'\''"]options\.html["'\''"];/\/\/ disabled first-run redirect to options.html/g'
 
-popd
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx
 

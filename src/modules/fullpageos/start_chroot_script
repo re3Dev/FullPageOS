@@ -635,6 +635,26 @@ EOF'
 fi
 
 
+###############################################################################
+# Copy custom shell commands into /usr/local/bin (if any)
+###############################################################################
+SRC="/home/${BASE_USER}/printer_data/config/src/system_config/shell_commands"
+DST="/usr/local/bin"
+
+if [ -d "$SRC" ]; then
+  # Ensure target exists
+  install -d -m 0755 "$DST"
+
+  # Copy regular files only; make them executable; own by root
+  find "$SRC" -maxdepth 1 -type f -print0 \
+    | xargs -0 -I{} install -m 0755 -o root -g root "{}" "$DST/"
+
+  # Optional: show what was installed
+  echo "Installed custom shell commands to $DST:"
+  find "$SRC" -maxdepth 1 -type f -printf "  -> %f\n"
+else
+  echo "NOTE: $SRC not found; skipping shell command install."
+fi
 
 
 ###############################################################################

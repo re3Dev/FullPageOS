@@ -695,6 +695,7 @@ systemctl daemon-reload || true
 
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx
+systemctl enable splash_video.service
 
 # NTP servers
 echo "server time.nist.gov" >> /etc/ntp.conf

@@ -39,6 +39,25 @@ enable_auto_refresh: True
 enable_system_updates: True
 channel: dev
 
+[update_manager mainsail]
+type: web
+channel: stable
+repo: mainsail-crew/mainsail
+path: ~/mainsail
+
+[update_manager beacon]
+type: git_repo
+channel: dev
+path: ~/beacon_klipper
+origin: https://github.com/beacon3d/beacon_klipper.git
+env: ~/klippy-env/bin/python
+requirements: requirements.txt
+install_script: install.sh
+is_system_service: False
+managed_services: klipper
+info_tags:
+  desc=Beacon Surface Scanner
+
 
 
 

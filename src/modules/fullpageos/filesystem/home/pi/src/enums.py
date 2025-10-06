@@ -1,3 +1,0 @@
-
-FFF = "fff"
-FGF = "fgf"

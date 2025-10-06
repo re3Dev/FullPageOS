@@ -692,7 +692,7 @@ fi
 # 3) (Optional) If Klipper might already be running on first boot, ensure the service reloads.
 systemctl daemon-reload || true
 # Do NOT restart Klipper here in the chroot; it will pick up the module on first boot.
-
+sudo chmod +x/home/${BASE_USER}/printer_data/config/src/get_serial.sh || true
 # 5) Ensure nginx starts on first boot
 systemctl enable nginx
 systemctl enable splash_video.service

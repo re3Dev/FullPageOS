@@ -634,6 +634,26 @@ log_path: ~/printer_data/logs/crowsnest.log
 EOF'
 fi
 
+###############################################################################
+# Beacon3D – beacon_klipper
+###############################################################################
+# Clone/update as the base user
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  cd ~
+  if [ ! -d "$HOME/beacon_klipper/.git" ]; then
+    git clone https://github.com/beacon3d/beacon_klipper.git
+  else
+    cd beacon_klipper && git fetch --all -p && \
+      (git rev-parse --verify origin/main >/dev/null 2>&1 && git reset --hard origin/main || git reset --hard origin/master)
+  fi
+'
+
+# Run the installer (as root so it won’t ask for a sudo password in chroot)
+# If the script supports non-interactive flags, you can add them (e.g. -y).
+export DEBIAN_FRONTEND=noninteractive
+bash -lc "cd /home/${BASE_USER}/beacon_klipper && ./install.sh"
+
 
 ###############################################################################
 # Copy custom shell commands into /usr/local/bin (if any)

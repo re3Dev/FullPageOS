@@ -1,10 +1,15 @@
+# /etc/systemd/system/klipper_config.service
 [Unit]
-Description=Script that calls ~/klipper_config/src/reload.py to reset mainsail UI interface
+Description=Script that calls ~/printer_data/config/src/reload.py to reset mainsail UI interface
 
 [Service]
-User=pi
+Type=oneshot
+User=root
 WorkingDirectory=/home/pi/printer_data/config/src
-ExecStart=/bin/sh -c '/usr/bin/python3 /home/pi/printer_data/config/src/reload.py > /home/pi/printer_data/logs/klipper_config.log 2>&1'
+Environment=HOME=/home/pi PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/pi/printer_data/config/src/reload.py
+StandardOutput=append:/home/pi/printer_data/logs/klipper_config.log
+StandardError=append:/home/pi/printer_data/logs/klipper_config.log
 
 [Install]
 WantedBy=multi-user.target

@@ -698,6 +698,7 @@ systemctl enable nginx
 systemctl enable splash_video.service
 systemctl enable klipper_config.service
 systemctl enable flash_firmware.service
+systemctl enable klipper-autostart.service
 
 # NTP servers
 echo "server time.nist.gov" >> /etc/ntp.conf

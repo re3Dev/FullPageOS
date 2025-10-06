@@ -1,0 +1,11 @@
+[Unit]
+Description=Kick Klipper at boot
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start klipper
+
+[Install]
+WantedBy=multi-user.target

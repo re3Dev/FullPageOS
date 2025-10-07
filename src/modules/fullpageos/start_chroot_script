@@ -635,9 +635,9 @@ EOF'
 fi
 
 ###############################################################################
-# Beacon3D – beacon_klipper
+# Beacon3D – beacon_klipper (run after Klipper + klippy-env are created)
 ###############################################################################
-# Clone/update as the base user
+# Clone/update as pi
 sudo -u "${BASE_USER}" bash -lc '
   set -e
   cd ~
@@ -649,10 +649,18 @@ sudo -u "${BASE_USER}" bash -lc '
   fi
 '
 
-# Run the installer (as root so it won’t ask for a sudo password in chroot)
-# If the script supports non-interactive flags, you can add them (e.g. -y).
-export DEBIAN_FRONTEND=noninteractive
-bash -lc "cd /home/${BASE_USER}/beacon_klipper && ./install.sh"
+# Run installer as pi (so it sees ~/klipper and ~/klippy-env). Guard if missing.
+sudo -u "${BASE_USER}" bash -lc '
+  set -e
+  if [ -d "$HOME/klipper" ] && [ -x "$HOME/klippy-env/bin/python" ]; then
+    cd ~/beacon_klipper
+    # Use -y if supported; otherwise it just ignores it and runs normally.
+    ./install.sh -y || ./install.sh
+  else
+    echo "Beacon installer skipped: ~/klipper or ~/klippy-env not found for ${USER}."
+  fi
+'
+
 
 
 ###############################################################################

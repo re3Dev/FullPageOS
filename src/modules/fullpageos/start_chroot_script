@@ -400,24 +400,22 @@ apt-get install -y --no-install-recommends exfatprogs ntfs-3g
 apt-get purge -y usbmount || true
 rm -f /etc/udev/rules.d/*usbmount*.rules /lib/udev/rules.d/*usbmount*.rules || true
 
-# 2) udev rule: on add -> mkdir & systemd-mount (owned by ${BASE_USER}); on remove -> umount
+# udev: only act on USB partitions
 cat >/etc/udev/rules.d/99-auto-usb.rules <<'EOF'
-# Mount by label (encoded label: spaces become x20)
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}!="", \
+ACTION=="add", SUBSYSTEM=="block", DEVTYPE=="partition", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}!="", \
   RUN+="/bin/sh -c 'mkdir -p /media/usb-$env{ID_FS_LABEL_ENC}; /usr/bin/systemd-mount --no-block --collect --fsck=yes --options=uid=@UID@,gid=@GID@,umask=002 /dev/%k /media/usb-$env{ID_FS_LABEL_ENC}'"
 
-# Fallback: mount by UUID when no label
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
+ACTION=="add", SUBSYSTEM=="block", DEVTYPE=="partition", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
   RUN+="/bin/sh -c 'mkdir -p /media/usb-UUID-$env{ID_FS_UUID}; /usr/bin/systemd-mount --no-block --collect --fsck=yes --options=uid=@UID@,gid=@GID@,umask=002 /dev/%k /media/usb-UUID-$env{ID_FS_UUID}'"
 
-# Unmount on remove (by path)
-ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}!="", \
+ACTION=="remove", SUBSYSTEM=="block", DEVTYPE=="partition", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}!="", \
   RUN+="/usr/bin/systemd-umount /media/usb-$env{ID_FS_LABEL_ENC}"
-ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
+ACTION=="remove", SUBSYSTEM=="block", DEVTYPE=="partition", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
   RUN+="/usr/bin/systemd-umount /media/usb-UUID-$env{ID_FS_UUID}"
 EOF
-# Inject actual uid/gid values into the rule
-sed -i "s/@UID@/${UID_BASE}/g; s/@GID@/${GID_BASE}/g" /etc/udev/rules.d/99-auto-usb.rules
+
+# Replace @UID@/@GID@ with your base user's ids
+sed -i "s/@UID@/$(id -u ${BASE_USER})/; s/@GID@/$(id -g ${BASE_USER})/" /etc/udev/rules.d/99-auto-usb.rules
 udevadm control --reload || true
 
 # 3) Updater: create ONLY one link "usb-drive" to the first non-empty USB mount

@@ -17,7 +17,7 @@ cp $PWD/00_remove_model_symlink /etc/usbmount/umount.d/
 chown root:root /etc/usbmount/mount.d/00_create_model_symlink
 chown root:root /etc/usbmount/umount.d/00_remove_model_symlink 
 
-chown 755 /etc/usbmount/mount.d/00_create_model_symlink
+chmod 755 /etc/usbmount/mount.d/00_create_model_symlink
 chmod 755 /etc/usbmount/umount.d/00_remove_model_symlink
 chmod 644 /etc/usbmount/usbmount.conf
 

@@ -387,91 +387,33 @@ systemctl daemon-reload || true
 # USB automount (USB partitions only) + single gcodes link "usb-drive"
 ###############################################################################
 
-# Resolve base user's home and ids
-BASE_HOME="/home/${BASE_USER}"
-UID_BASE="$(id -u "${BASE_USER}" 2>/dev/null || echo 1000)"
-GID_BASE="$(id -g "${BASE_USER}" 2>/dev/null || echo 1000)"
-
+# Install USB FS helpers and the automounter package
 apt-get update
-apt-get install -y --no-install-recommends exfatprogs ntfs-3g
+apt-get install -y --no-install-recommends exfatprogs ntfs-3g ca-certificates wget
+update-ca-certificates || true
 
-# Remove legacy usbmount if present
-apt-get purge -y usbmount || true
-rm -f /etc/udev/rules.d/*usbmount*.rules /lib/udev/rules.d/*usbmount*.rules || true
+# Install pi-usb-automount (mounts first drive at /media/usb0)
+TMPDEB="/tmp/pi-usb-automount.deb"
+wget -q -O "$TMPDEB" https://github.com/fasteddy516/pi-usb-automount/releases/latest/download/pi-usb-automount.deb
+dpkg -i "$TMPDEB" || apt-get -f install -y
+rm -f "$TMPDEB"
+udevadm control --reload-rules || true
 
-# udev: USB-only, partitions only, robust %E{} expansion; writeable by ${BASE_USER}
-cat >/etc/udev/rules.d/99-auto-usb.rules <<'EOF'
-# Labeled USB partitions
-ACTION=="add", SUBSYSTEM=="block", DEVTYPE=="partition", KERNELS=="*usb*", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}!="", \
-  RUN+="/bin/sh -c 'mkdir -p /media/usb-%E{ID_FS_LABEL_ENC}; /usr/bin/systemd-mount --no-block --collect --fsck=yes --options=uid=@UID@,gid=@GID@,umask=002 /dev/%k /media/usb-%E{ID_FS_LABEL_ENC}'"
-# Unlabeled USB partitions (UUID fallback)
-ACTION=="add", SUBSYSTEM=="block", DEVTYPE=="partition", KERNELS=="*usb*", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
-  RUN+="/bin/sh -c 'mkdir -p /media/usb-UUID-%E{ID_FS_UUID}; /usr/bin/systemd-mount --no-block --collect --fsck=yes --options=uid=@UID@,gid=@GID@,umask=002 /dev/%k /media/usb-UUID-%E{ID_FS_UUID}'"
-# Unmount on remove
-ACTION=="remove", SUBSYSTEM=="block", DEVTYPE=="partition", KERNELS=="*usb*", ENV{ID_FS_USAGE}=="filesystem", \
-  RUN+="/usr/bin/systemd-umount /media/usb-%E{ID_FS_LABEL_ENC}"
-ACTION=="remove", SUBSYSTEM=="block", DEVTYPE=="partition", KERNELS=="*usb*", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="", \
-  RUN+="/usr/bin/systemd-umount /media/usb-UUID-%E{ID_FS_UUID}"
+# Ensure gcodes dirs exist for both common layouts
+install -d -m 775 "/home/${BASE_USER}/printer_data/gcodes" "/printer_data/gcodes"
+
+# Make stable symlinks that always point to /media/usb0 (no per-plug updates needed)
+ln -sfn /media/usb0 "/home/${BASE_USER}/printer_data/gcodes/usb-drive"
+ln -sfn /media/usb0 "/printer_data/gcodes/usb-drive"
+
+# Recreate those symlinks at boot (in case something wipes them)
+cat >/etc/tmpfiles.d/usb-drive.conf <<'EOF'
+L+ /home/REPLACE_USER/printer_data/gcodes/usb-drive - - - - /media/usb0
+L+ /printer_data/gcodes/usb-drive                   - - - - /media/usb0
 EOF
-sed -i "s/@UID@/${UID_BASE}/g; s/@GID@/${GID_BASE}/g" /etc/udev/rules.d/99-auto-usb.rules
-udevadm control --reload || true
-
-# Updater: ALWAYS keep one alias ~/printer_data/gcodes/usb-drive
-install -d -o "${BASE_USER}" -g "${BASE_USER}" "${BASE_HOME}/printer_data/gcodes"
-cat >/usr/local/bin/update-gcodes-symlinks.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-cd /
-GCODES_DIR="@BASE_HOME@/printer_data/gcodes"
-STATE_DIR="/var/lib/usb-drive-alias"
-STATE_FILE="$STATE_DIR/last_target"
-mkdir -p "$GCODES_DIR" "$STATE_DIR"
-shopt -s nullglob
-# remove any old mirrors; keep only alias
-find "$GCODES_DIR" -maxdepth 1 -type l -name 'usb-*' ! -name 'usb-drive' -exec rm -f {} +
-# choose target: first non-empty USB mount; else first empty; else last known; else placeholder
-target=""
-for mp in /media/usb-*; do
-  [[ -d "$mp" ]] || continue
-  if find "$mp" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then target="$mp"; break; fi
-  [[ -z "$target" ]] && target="$mp"
-done
-if [[ -n "${target}" ]]; then
-  ln -sfn "$target" "$GCODES_DIR/usb-drive"
-  printf '%s\n' "$target" > "$STATE_FILE"
-elif [[ -s "$STATE_FILE" ]]; then
-  ln -sfn "$(cat "$STATE_FILE")" "$GCODES_DIR/usb-drive"
-else
-  mkdir -p /media/usb-last
-  ln -sfn /media/usb-last "$GCODES_DIR/usb-drive"
-fi
-EOF
-sed -i "s|@BASE_HOME@|${BASE_HOME}|g" /usr/local/bin/update-gcodes-symlinks.sh
-chmod 755 /usr/local/bin/update-gcodes-symlinks.sh
-
-# systemd units to auto-refresh on /media changes
-cat >/etc/systemd/system/update-gcodes-symlinks.service <<'EOF'
-[Unit]
-Description=Refresh Klipper gcodes USB symlink (usb-drive)
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/update-gcodes-symlinks.sh
-EOF
-cat >/etc/systemd/system/update-gcodes-symlinks.path <<'EOF'
-[Unit]
-Description=Watch /media for USB mounts to refresh gcodes symlink
-[Path]
-PathExistsGlob=/media/usb-*
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload || true
-systemctl enable update-gcodes-symlinks.path || true
-
-# Optionally clean any old links from prior builds
-rm -f "${BASE_HOME}/printer_data/gcodes"/usb-* 2>/dev/null || true
-
-
+sed -i "s|REPLACE_USER|${BASE_USER}|g" /etc/tmpfiles.d/usb-drive.conf
+# (systemd-tmpfiles may or may not be active in chroot, but it's safe to call)
+systemd-tmpfiles --create /etc/tmpfiles.d/usb-drive.conf || true
 
 
 ###############################################################################
